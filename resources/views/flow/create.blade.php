@@ -20,6 +20,7 @@
                         description: '',
                         skipable: false,
                         options: ['Yes', 'No'],
+                        branches: {0: null, 1: null},
                     });
                 },
 
@@ -117,6 +118,28 @@
                                 <input type="checkbox" x-model="card.skipable" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
                                 <span class="ml-2 text-sm text-gray-700"> Skipable </span>
                             </label>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700"> If left swipe, go to: </label>
+                            <select x-model="card.branches[0]" 
+                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <option :value="null">Next card in sequence</option>
+                                <template x-for="(c, i) in svaip.cards" :key="i">
+                                    <option :value="i+1" x-show="i !== index" x-text="'Card ' + (i+1) + ': ' + (c.question || 'Untitled')"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700"> If right swipe, go to: </label>
+                            <select x-model="card.branches[1]" 
+                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <option :value="null">Next card in sequence</option>
+                                <template x-for="(c, i) in svaip.cards" :key="i">
+                                    <option :value="i+1" x-show="i !== index" x-text="'Card ' + (i+1) + ': ' + (c.question || 'Untitled')"></option>
+                                </template>
+                            </select>
                         </div>
                     </div>
                 </div>

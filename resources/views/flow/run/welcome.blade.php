@@ -80,13 +80,16 @@
                         .then(response => response.json())
                         .then(data => {
                             console.log('Answer recorded:', data);
-                            // Move to next card
-                            const currentIndex = this.flow.cards.findIndex(card => card.id === this.currentCard.id);
-                            if (currentIndex < this.flow.cards.length - 1) {
-                                this.currentCard = this.flow.cards[currentIndex + 1];
+                            // Use branching logic from server response
+                            if (data.next_card) {
+                                this.currentCard = data.next_card;
                             } else {
                                 // Flow finished
                                 this.currentCard = null;
+                                fetch('/api/flow/' + this.flowId + '/run/' + this.runId + '/stop', {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/json'},
+                                });
                             }
                         });
                     }
