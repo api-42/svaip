@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('flow_runs', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignId('flow_id')->constrained()->onDelete('cascade');
             $table->timestamp('started_at')->nullable();
             $table->timestamp('completed_at')->nullable();

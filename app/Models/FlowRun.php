@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class FlowRun extends Model
 {
+    public $incrementing = false;
+    protected $keyType = 'string';
     protected $guarded = [];
     public $casts = [
         'started_at' => 'datetime',

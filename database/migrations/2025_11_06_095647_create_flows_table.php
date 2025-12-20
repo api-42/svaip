@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->json('cards');
             $table->string('name');
+            $table->unsignedBigInteger('user_id');
             $table->string('description')->nullable();
             $table->timestamps();
         });

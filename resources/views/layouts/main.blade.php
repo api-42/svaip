@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <title>{{ config('app.name', 'Laravel') }}</title>
+    <link rel="stylesheet" href="{{ asset('css/app.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap" rel="stylesheet">
@@ -20,17 +21,42 @@
             scrollbar-gutter: stable both-edges;
         }
     </style>
-    @stack('scripts')
 </head>
-    <body class="bg-gray-50">
-        <div class="min-h-screen flex flex-col">
-            <main class="flex-1">
-                <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    <div class="p-4 sm:px-0">
-                        @yield('content')
-                    </div>
+<body class="bg-gray-50">
+    <div class="min-h-screen flex flex-col">
+        @unless(isset($clean) && $clean)
+            <header class="bg-white shadow">
+                <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                    <h1 class="text-3xl font-bold text-gray-900 mr-1">
+                        {{ config('app.name', 'Laravel') }}
+                    </h1>
+
+                    @InApp
+                        <span class="text-xs sm:text-base md:text-xl">Collect what matters and get clarity — fast.</span>
+                    @endInApp
+
+                    @auth
+                        <div>
+                            <span class="text-gray-700 mr-4">{{ auth()->user()->name }}</span>
+                            <form method="POST" action="{{ route('logout') }}" class="inline">
+                                @csrf
+                                <button type="submit" class="text-gray-500 hover:text-gray-800">
+                                    Logout
+                                </button>
+                            </form>
+                        </div>
+                    @endauth
                 </div>
-            </main>
+            </header>
+        @endunless
+        <main class="flex-1">
+            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+                <div class="mt-4 p-4 sm:px-0">
+                    @yield('content')
+                </div>
+            </div>
+        </main>
+        @unless(isset($clean) && $clean)
             <footer class="bg-white border-t">
                 <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
                     <p class="text-center text-sm text-gray-500">
@@ -38,6 +64,8 @@
                     </p>
                 </div>
             </footer>
-        </div>
-    </body>
+        @endunless
+    </div>
+    @stack('scripts')
+</body>
 </html>

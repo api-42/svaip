@@ -4,21 +4,36 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Card;
 use App\Models\Flow;
+use Illuminate\Support\Str;
+use Illuminate\Http\Response;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\FlowResource;
 
 class FlowController extends Controller
 {
+    public function run($id)
+    {
+        $flow = Flow::findOrFail($id);
+        $this->ensureOwnsFlow($flow);
+
+        $newRun = $flow->runs()->create(['id' => Str::uuid()]);
+
+        return redirect()->route('flow-run-start', ['id' => $newRun->id]);
+    }
+
     public function show($id)
     {
         $flow = Flow::findOrFail($id);
+        $this->ensureOwnsFlow($flow);
 
         return new FlowResource($flow);
     }
 
     public function index()
     {
-        return response()->json(Flow::all());
+        return response()->json(
+            Flow::where('user_id', auth()->id())->get()
+        );
     }
 
     public function store()
@@ -27,7 +42,7 @@ class FlowController extends Controller
             'cards' => 'required|array|min:1',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'cards.*.skipable' => 'required|boolean',
+            'cards.*.skipable' => 'sometimes|accepted',
             'cards.*.options' => 'required|array|min:2|max:2',
             'cards.*.options.*' => 'required|string|max:255',
             'cards.*.description' => 'nullable|string|max:255',
@@ -67,12 +82,19 @@ class FlowController extends Controller
             }
         }
 
-        $flow = Flow::create([
+        $flow = auth()->user()->flows()->create([
             'name' => request('name'),
             'cards' => collect($cards)->pluck('id'),
             'description' => request('description'),
         ]);
 
-        return response()->json($flow, 201);
+        return redirect()->route('flow.index');
+    }
+
+    private function ensureOwnsFlow(Flow $flow): void
+    {
+        if ($flow->user_id !== auth()->id()) {
+            abort(Response::HTTP_FORBIDDEN, 'Not authorized to access this flow.');
+        }
     }
 }

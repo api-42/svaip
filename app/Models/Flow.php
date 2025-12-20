@@ -20,4 +20,11 @@ class Flow extends Model
     {
         return Card::whereIn('id', $this->cards)->get();
     }
+
+    public function shortDescription()
+    {
+        return strlen($this->description) > 50
+            ? substr($this->description, 0, 50) . '...'
+            : $this->description;
+    }
 }

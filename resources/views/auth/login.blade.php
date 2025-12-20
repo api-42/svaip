@@ -1,30 +1,30 @@
 @extends('layouts.main')
+
 @section('scripts')
-<script>
-document.addEventListener('load', function() {
-    const emailInput = document.getElementById('email');
-    const passwordInput = document.getElementById('password');
-    const errorSpans = document.getElementsByClassName('text-red-500');
+    <script>
+        document.addEventListener('load', function() {
+            const emailInput = document.getElementById('email');
+            console.log(emailInput);
+            const passwordInput = document.getElementById('password');
+            const errorWrapper = document.getElementById('errors');
 
-    function clearErrors() {
-        Array.from(errorSpans).forEach(span => {
-            span.style.display = 'none';
+            function clearErrors() {
+                console.log('Clearing errors');
+                errorWrapper.innerHTML = '';
+            }
+
+            emailInput.addEventListener('focus', clearErrors);
+            passwordInput.addEventListener('focus', clearErrors);
         });
-    }
-
-    emailInput.addEventListener('focus', clearErrors);
-    passwordInput.addEventListener('focus', clearErrors);
-});
-</script>
+    </script>
 @endsection
+
 @section('content')
     <div class="flex items-center justify-center px-4 sm:px-6 lg:px-8">
         <div class="max-w-md w-full space-y-8">
-            <div>
-                <h2 class="text-center text-2xl text-gray-900">
-                    Svaip login // v.1
-                </h2>
-            </div>
+            <h2 class="text-center text-2xl text-gray-900">
+            Login to your svaip account
+            </h2>
             <form class="mt-8 space-y-6" action="{{ route('login') }}" method="POST">
                 @csrf
                 <div class="rounded-md">
@@ -41,7 +41,7 @@ document.addEventListener('load', function() {
                             placeholder="Password">
                     </div>
                 </div>
-                <div class="p-2">
+                <div id="errors" class="p-2">
                     @error('email')
                         <span class="text-red-500 text-sm">{{ $message }}</span>
                     @enderror

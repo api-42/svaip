@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('flow_run_results', function (Blueprint $table) {
             $table->id();
-            $table->json('answer')->nullable();
+            $table->unsignedInteger('answer');
             $table->foreignId('card_id')->constrained()->onDelete('cascade');
             $table->foreignId('flow_run_id')->constrained()->onDelete('cascade');
             $table->timestamps();
