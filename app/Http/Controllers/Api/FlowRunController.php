@@ -11,32 +11,6 @@ use Illuminate\Validation\Rule;
 
 class FlowRunController extends Controller
 {
-    public function answer($runId)
-    {
-        $flowRun = FlowRun::findOrFail($runId);
-        $this->ensureOwnsFlowRun($flowRun);
-
-        request()->validate([
-            'answer' => 'required|integer|min:0|max:1',
-            'card_id' => [
-                'required',
-                'integer',
-                Rule::in($flowRun->flow->cards ?? []),
-            ],
-        ]);
-
-        $flowRun->results()->updateOrCreate(
-            [
-                'card_id' => request('card_id'),
-            ],
-            [
-                'answer' => request('answer'),
-            ]
-        );
-
-        return response()->json([], Response::HTTP_CREATED);
-    }
-
     public function create($id)
     {
         $flow = Flow::findOrFail($id);
@@ -67,30 +41,19 @@ class FlowRunController extends Controller
         $flowRun = FlowRun::findOrFail($flowRunId);
         $this->ensureOwnsFlowRun($flowRun);
         $flowRun->stopped();
+        
+        // Calculate score and assign result template when flow is completed
+        $flowRun->calculateScore();
+        $flowRun->assignResultTemplate();
 
         return new FlowRunResource($flowRun);
-    }
-
-    private function ensureOwnsFlow(Flow $flow): void
-    {
-        if ($flow->user_id !== auth()->id()) {
-            abort(Response::HTTP_FORBIDDEN, 'Not authorized to access this flow.');
-        }
-    }
-
-    private function ensureOwnsFlowRun(FlowRun $flowRun): void
-    {
-        $flowRun->loadMissing('flow');
-
-        if (!$flowRun->flow || $flowRun->flow->user_id !== auth()->id()) {
-            abort(Response::HTTP_FORBIDDEN, 'Not authorized to access this run.');
-        }
     }
 
     public function answer($id, $flowRunId)
     {
         $flow = Flow::findOrFail($id);
         $flowRun = $flow->runs()->where('id', $flowRunId)->firstOrFail();
+        $this->ensureOwnsFlow($flow);
 
         request()->validate([
             'card_id' => 'required|exists:cards,id',

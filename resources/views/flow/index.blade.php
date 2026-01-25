@@ -26,7 +26,10 @@
                                     <a href="{{ route('flow.run', $svaip) }}" class="inline-flex items-center px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
                                         ▶ Run
                                     </a>
-                                    <button  onclick="navigator.clipboard.writeText('{{ route('flow.run', $svaip) }}')" class="inline-flex items-center px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
+                                    <a href="{{ route('flow.settings', $svaip->id) }}" class="inline-flex items-center px-3 py-1.5 bg-gray-600 text-white text-sm rounded-md hover:bg-gray-700">
+                                        ⚙ Settings
+                                    </a>
+                                    <button onclick="navigator.clipboard.writeText('{{ route('flow.run', $svaip) }}')" class="inline-flex items-center px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
                                         ⧉ Copy url
                                     </button>
                                 </td>

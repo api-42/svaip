@@ -48,6 +48,8 @@ class FlowController extends Controller
             'cards.*.description' => 'nullable|string|max:255',
             'cards.*.question' => 'required|string|max:255|min:1',
             'cards.*.branches' => 'nullable|array',
+            'cards.*.scoring' => 'nullable|array',
+            'cards.*.scoring.*' => 'nullable|integer',
         ]);
 
         $cards = [];
@@ -58,9 +60,10 @@ class FlowController extends Controller
             $card = Card::create([
                 'question' => $cardData['question'],
                 'description' => $cardData['description'] ?? null,
-                'skipable' => $cardData['skipable'],
+                'skipable' => $cardData['skipable'] ?? false,
                 'options' => $cardData['options'],
                 'branches' => null, // We'll update this in second pass
+                'scoring' => $cardData['scoring'] ?? null,
             ]);
             $cards[] = $card;
             $cardIdMapping[$index + 1] = $card->id; // Map 1-based index to card ID
@@ -88,7 +91,48 @@ class FlowController extends Controller
             'description' => request('description'),
         ]);
 
+        \Log::info('Flow created', [
+            'flow_id' => $flow->id,
+            'user_id' => auth()->id(),
+            'name' => $flow->name,
+            'cards_count' => count($flow->cards)
+        ]);
+
         return redirect()->route('flow.index');
+    }
+
+    public function togglePublic($id)
+    {
+        \Log::info('Toggle public called', ['flow_id' => $id, 'user_id' => auth()->id()]);
+        
+        $flow = Flow::findOrFail($id);
+        $this->ensureOwnsFlow($flow);
+
+        request()->validate([
+            'is_public' => 'required|boolean',
+        ]);
+
+        $flow->is_public = request('is_public');
+        
+        // Generate slug if making public and doesn't have one
+        if ($flow->is_public && !$flow->public_slug) {
+            $flow->public_slug = $flow->generateUniqueSlug();
+        }
+        
+        $flow->save();
+
+        \Log::info('Flow public status updated', [
+            'flow_id' => $flow->id,
+            'is_public' => $flow->is_public,
+            'public_slug' => $flow->public_slug
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'is_public' => $flow->is_public,
+            'public_url' => $flow->publicUrl(),
+            'public_slug' => $flow->public_slug,
+        ]);
     }
 
     private function ensureOwnsFlow(Flow $flow): void

@@ -79,6 +79,19 @@ Route::middleware('auth')->group(function () {
         return view('flow.create');
     })->name('flow.create');
 
+    Route::get('/flow/{id}/settings', function ($id) {
+        $flow = Flow::findOrFail($id);
+        
+        // Ensure user owns the flow
+        if ($flow->user_id !== auth()->id()) {
+            abort(403);
+        }
+        
+        return view('flow.settings', ['flow' => $flow]);
+    })->name('flow.settings');
+
+    Route::post('/flow/{id}/toggle-public', [FlowController::class, 'togglePublic'])->name('flow.toggle-public');
+
     Route::post('/flow/store', [FlowController::class, 'store'])->name('flow.store');
 
     Route::get('/card', [CardController::class, 'index']);
@@ -101,3 +114,28 @@ Route::middleware('auth')->group(function () {
     Route::post('/flow/{id}/run/{flowRunId}/stop', [FlowRunController::class, 'stop']);
     Route::get('/flow/{id}/run/{flowRunId}/start', [FlowRunController::class, 'start']);
 });
+
+// Public flow routes (anonymous access)
+Route::prefix('p')->name('public.flow.')->group(function () {
+    Route::get('/{slug}', [App\Http\Controllers\PublicFlowController::class, 'show'])->name('show');
+    Route::post('/{slug}/start', [App\Http\Controllers\PublicFlowController::class, 'start'])->name('start');
+    Route::get('/{slug}/run/{runId}', [App\Http\Controllers\PublicFlowController::class, 'run'])->name('run');
+    Route::post('/{slug}/run/{runId}/answer', [App\Http\Controllers\PublicFlowController::class, 'answer'])->name('answer');
+    Route::get('/{slug}/run/{runId}/result', [App\Http\Controllers\PublicFlowController::class, 'result'])->name('result');
+});
+
+// Public routes for sharing results
+Route::get('/results/{shareToken}', function($shareToken) {
+    $flowRun = FlowRun::where('share_token', $shareToken)->firstOrFail();
+    
+    // Make sure the flow run is completed
+    if (!$flowRun->completed_at) {
+        abort(404, 'This result is not yet available.');
+    }
+    
+    return view('results.show', [
+        'flowRun' => $flowRun,
+        'resultTemplate' => $flowRun->resultTemplate,
+        'flow' => $flowRun->flow,
+    ]);
+})->name('results.show');

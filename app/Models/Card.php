@@ -2,14 +2,18 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Card extends Model
 {
+    use HasFactory;
+    
     protected $guarded = [];
     public $casts = [
         'options' => 'array',
         'branches' => 'array',
+        'scoring' => 'array',
     ];
 
     /**
@@ -24,5 +28,19 @@ class Card extends Model
         }
         
         return $this->branches[$answer];
+    }
+
+    /**
+     * Get the score for a given answer
+     * @param int $answer The answer index (0 or 1)
+     * @return int The points for this answer
+     */
+    public function getScore($answer)
+    {
+        if (!$this->scoring || !isset($this->scoring[$answer])) {
+            return 0;
+        }
+        
+        return (int) $this->scoring[$answer];
     }
 }
