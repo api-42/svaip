@@ -10,14 +10,14 @@ echo.
 REM Check prerequisites
 if not exist .env (
     echo [ERROR] .env file not found!
-    echo Run 'composer setup' first.
+    echo Run 'php C:\php\composer.phar setup' first.
     pause
     exit /b 1
 )
 
 if not exist vendor (
     echo [ERROR] Dependencies not installed!
-    echo Run 'composer install' first.
+    echo Run 'php C:\php\composer.phar install' first.
     pause
     exit /b 1
 )

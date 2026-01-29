@@ -11,12 +11,36 @@ use Illuminate\Validation\Rule;
 
 class FlowRunController extends Controller
 {
+    /**
+     * Ensure the authenticated user owns the flow.
+     */
+    private function ensureOwnsFlow(Flow $flow): void
+    {
+        if ($flow->user_id !== auth()->id()) {
+            abort(403, 'Not authorized to access this flow.');
+        }
+    }
+
+    /**
+     * Ensure the authenticated user owns the flow run.
+     */
+    private function ensureOwnsFlowRun(FlowRun $flowRun): void
+    {
+        if ($flowRun->user_id !== auth()->id()) {
+            abort(403, 'Not authorized to access this flow run.');
+        }
+    }
+
     public function create($id)
     {
         $flow = Flow::findOrFail($id);
         $this->ensureOwnsFlow($flow);
 
-        $flowRun = $flow->runs()->create();
+        $flowRun = $flow->runs()->create([
+            'id' => \Illuminate\Support\Str::uuid(),
+            'user_id' => auth()->id(),
+            'started_at' => now(),
+        ]);
 
         foreach ($flow->cards() as $card) {
             $flowRun->results()->create([
@@ -40,6 +64,18 @@ class FlowRunController extends Controller
     {
         $flowRun = FlowRun::findOrFail($flowRunId);
         $this->ensureOwnsFlowRun($flowRun);
+        
+        // Validate and store form field responses if provided
+        if (request()->has('form_data') && is_array(request('form_data'))) {
+            foreach (request('form_data') as $fieldName => $fieldValue) {
+                \App\Models\FlowRunFormResponse::create([
+                    'flow_run_id' => $flowRun->id,
+                    'field_name' => $fieldName,
+                    'field_value' => $fieldValue,
+                ]);
+            }
+        }
+        
         $flowRun->stopped();
         
         // Calculate score and assign result template when flow is completed
@@ -69,6 +105,7 @@ class FlowRunController extends Controller
             ->firstOrFail();
         
         $result->answer = $answer;
+        $result->answered_at = now();
         $result->save();
 
         // Determine next card using branching logic

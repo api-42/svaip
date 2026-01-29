@@ -9,10 +9,20 @@ class Flow extends Model
 {
     use HasFactory;
     
-    protected $guarded = [];
+    protected $fillable = [
+        'name',
+        'description', 
+        'cards',
+        'layout',
+        'metadata',
+        'is_public',
+        'allow_anonymous',
+    ];
     
     public $casts = [
         'cards' => 'array',
+        'layout' => 'array',
+        'metadata' => 'array',
         'is_public' => 'boolean',
         'allow_anonymous' => 'boolean',
     ];
@@ -46,7 +56,17 @@ class Flow extends Model
 
     public function cards()
     {
-        return Card::whereIn('id', $this->cards)->get();
+        if (empty($this->cards)) {
+            return collect([]);
+        }
+        
+        // Get all cards and key by ID for fast lookup
+        $cards = Card::whereIn('id', $this->cards)->get()->keyBy('id');
+        
+        // Preserve order from the cards array
+        return collect($this->cards)->map(function($cardId) use ($cards) {
+            return $cards->get($cardId);
+        })->filter(); // Remove nulls if card was deleted
     }
 
     public function resultTemplates()

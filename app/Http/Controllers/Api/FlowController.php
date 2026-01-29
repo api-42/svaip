@@ -2,143 +2,175 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\Card;
-use App\Models\Flow;
-use Illuminate\Support\Str;
-use Illuminate\Http\Response;
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\ApiController;
+use App\Http\Requests\Api\FlowStoreRequest;
+use App\Http\Requests\Api\FlowUpdateRequest;
 use App\Http\Resources\FlowResource;
+use App\Models\Flow;
+use App\Services\FlowService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
-class FlowController extends Controller
+class FlowController extends ApiController
 {
-    public function run($id)
+    protected FlowService $flowService;
+
+    public function __construct(FlowService $flowService)
     {
-        $flow = Flow::findOrFail($id);
-        $this->ensureOwnsFlow($flow);
-
-        $newRun = $flow->runs()->create(['id' => Str::uuid()]);
-
-        return redirect()->route('flow-run-start', ['id' => $newRun->id]);
+        $this->flowService = $flowService;
     }
 
-    public function show($id)
+    /**
+     * Display a listing of the user's flows.
+     */
+    public function index(Request $request): JsonResponse
     {
-        $flow = Flow::findOrFail($id);
-        $this->ensureOwnsFlow($flow);
+        $this->authorize('viewAny', Flow::class);
 
-        return new FlowResource($flow);
-    }
+        $query = Flow::where('user_id', auth()->id());
 
-    public function index()
-    {
-        return response()->json(
-            Flow::where('user_id', auth()->id())->get()
-        );
-    }
+        // Pagination
+        $perPage = min($request->query('per_page', 15), 100);
+        $flows = $query->latest()->paginate($perPage);
 
-    public function store()
-    {
-        request()->validate([
-            'cards' => 'required|array|min:1',
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'cards.*.skipable' => 'sometimes|accepted',
-            'cards.*.options' => 'required|array|min:2|max:2',
-            'cards.*.options.*' => 'required|string|max:255',
-            'cards.*.description' => 'nullable|string|max:255',
-            'cards.*.question' => 'required|string|max:255|min:1',
-            'cards.*.branches' => 'nullable|array',
-            'cards.*.scoring' => 'nullable|array',
-            'cards.*.scoring.*' => 'nullable|integer',
+        return $this->success([
+            'flows' => FlowResource::collection($flows),
+            'pagination' => [
+                'total' => $flows->total(),
+                'per_page' => $flows->perPage(),
+                'current_page' => $flows->currentPage(),
+                'last_page' => $flows->lastPage(),
+            ],
         ]);
+    }
 
-        $cards = [];
-        $cardIdMapping = []; // Map from index to actual card ID
-        
-        // First pass: create all cards
-        foreach (request('cards', []) as $index => $cardData) {
-            $card = Card::create([
-                'question' => $cardData['question'],
-                'description' => $cardData['description'] ?? null,
-                'skipable' => $cardData['skipable'] ?? false,
-                'options' => $cardData['options'],
-                'branches' => null, // We'll update this in second pass
-                'scoring' => $cardData['scoring'] ?? null,
-            ]);
-            $cards[] = $card;
-            $cardIdMapping[$index + 1] = $card->id; // Map 1-based index to card ID
+    /**
+     * Store a newly created flow.
+     */
+    public function store(FlowStoreRequest $request): JsonResponse
+    {
+        $this->authorize('create', Flow::class);
+
+        try {
+            $flow = $this->flowService->createFlow(
+                $request->user(),
+                $request->validated()
+            );
+
+            return $this->success(
+                new FlowResource($flow),
+                'Flow saved successfully',
+                201
+            );
+
+        } catch (\InvalidArgumentException $e) {
+            // Validation error (e.g., cycle detection)
+            return $this->error($e->getMessage(), 422);
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to create flow: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Display the specified flow.
+     */
+    public function show(string $id): JsonResponse
+    {
+        $flow = Flow::where('user_id', auth()->id())->find($id);
+
+        if (!$flow) {
+            return $this->notFound('Flow not found');
         }
 
-        // Second pass: update branches with actual card IDs
-        foreach (request('cards', []) as $index => $cardData) {
-            if (isset($cardData['branches']) && is_array($cardData['branches'])) {
-                $branches = [];
-                foreach ($cardData['branches'] as $answer => $targetIndex) {
-                    if ($targetIndex !== null && isset($cardIdMapping[$targetIndex])) {
-                        $branches[$answer] = $cardIdMapping[$targetIndex];
-                    } else {
-                        $branches[$answer] = null;
-                    }
-                }
-                $cards[$index]->branches = $branches;
-                $cards[$index]->save();
+        $this->authorize('view', $flow);
+
+        return $this->success(new FlowResource($flow));
+    }
+
+    /**
+     * Update the specified flow.
+     */
+    public function update(FlowUpdateRequest $request, string $id): JsonResponse
+    {
+        $flow = Flow::where('user_id', auth()->id())->find($id);
+
+        if (!$flow) {
+            return $this->notFound('Flow not found');
+        }
+
+        $this->authorize('update', $flow);
+
+        try {
+            $flow = $this->flowService->updateFlow($flow, $request->validated());
+
+            return $this->success(
+                new FlowResource($flow),
+                'Flow updated successfully'
+            );
+
+        } catch (\InvalidArgumentException $e) {
+            // Validation error (e.g., cycle detection)
+            return $this->error($e->getMessage(), 422);
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to update flow: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Remove the specified flow.
+     */
+    public function destroy(string $id): JsonResponse
+    {
+        $flow = Flow::where('user_id', auth()->id())->find($id);
+
+        if (!$flow) {
+            return $this->notFound('Flow not found');
+        }
+
+        $this->authorize('delete', $flow);
+
+        try {
+            $this->flowService->deleteFlow($flow);
+
+            return $this->success(null, 'Flow deleted successfully');
+
+        } catch (\Exception $e) {
+            return $this->error('Failed to delete flow: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Toggle public status of the flow.
+     */
+    public function togglePublic(string $id): JsonResponse
+    {
+        $flow = Flow::where('user_id', auth()->id())->find($id);
+
+        if (!$flow) {
+            return $this->notFound('Flow not found');
+        }
+
+        $this->authorize('togglePublic', $flow);
+
+        try {
+            $flow->is_public = !$flow->is_public;
+            
+            // Generate slug if making public and no slug exists
+            if ($flow->is_public && !$flow->public_slug) {
+                $flow->public_slug = $flow->generateUniqueSlug();
             }
-        }
+            
+            $flow->save();
 
-        $flow = auth()->user()->flows()->create([
-            'name' => request('name'),
-            'cards' => collect($cards)->pluck('id'),
-            'description' => request('description'),
-        ]);
+            return $this->success(
+                new FlowResource($flow),
+                $flow->is_public ? 'Flow is now public' : 'Flow is now private'
+            );
 
-        \Log::info('Flow created', [
-            'flow_id' => $flow->id,
-            'user_id' => auth()->id(),
-            'name' => $flow->name,
-            'cards_count' => count($flow->cards)
-        ]);
-
-        return redirect()->route('flow.index');
-    }
-
-    public function togglePublic($id)
-    {
-        \Log::info('Toggle public called', ['flow_id' => $id, 'user_id' => auth()->id()]);
-        
-        $flow = Flow::findOrFail($id);
-        $this->ensureOwnsFlow($flow);
-
-        request()->validate([
-            'is_public' => 'required|boolean',
-        ]);
-
-        $flow->is_public = request('is_public');
-        
-        // Generate slug if making public and doesn't have one
-        if ($flow->is_public && !$flow->public_slug) {
-            $flow->public_slug = $flow->generateUniqueSlug();
-        }
-        
-        $flow->save();
-
-        \Log::info('Flow public status updated', [
-            'flow_id' => $flow->id,
-            'is_public' => $flow->is_public,
-            'public_slug' => $flow->public_slug
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'is_public' => $flow->is_public,
-            'public_url' => $flow->publicUrl(),
-            'public_slug' => $flow->public_slug,
-        ]);
-    }
-
-    private function ensureOwnsFlow(Flow $flow): void
-    {
-        if ($flow->user_id !== auth()->id()) {
-            abort(Response::HTTP_FORBIDDEN, 'Not authorized to access this flow.');
+        } catch (\Exception $e) {
+            return $this->error('Failed to toggle public status: ' . $e->getMessage(), 500);
         }
     }
 }

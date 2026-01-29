@@ -9,7 +9,17 @@ class ResultTemplate extends Model
 {
     use HasFactory;
     
-    protected $guarded = [];
+    protected $fillable = [
+        'flow_id',
+        'title',
+        'content',
+        'image_url',
+        'min_score',
+        'max_score',
+        'cta_text',
+        'cta_url',
+        'order',
+    ];
 
     public function flow()
     {

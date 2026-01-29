@@ -37,40 +37,43 @@
 
         <!-- Card Deck Area - Question Cards -->
         <template x-if="!previewComplete && svaip.cards[previewCardIndex] && svaip.cards[previewCardIndex].type !== 'end'">
-            <div class="flex justify-center items-center h-full touch-none p-2">
+            <div class="flex justify-center items-center h-full touch-none p-4">
                 <!-- Swipeable Card -->
                 <div @pointerdown="previewStartDrag($event)"
                     @pointermove="previewDrag($event)"
                     @pointerup="previewEndDrag($event)"
                     @pointercancel="previewEndDrag($event)"
                     :style="`transform: rotate(${previewRotation}deg) translateX(${previewOffsetX}px) translateY(${previewOffsetY}px); transition: transform 0.15s ease-out;`"
-                    class="select-none max-w-md w-full bg-white shadow-xl rounded-2xl overflow-hidden flex flex-col"
+                    class="select-none max-w-sm sm:max-w-lg w-full bg-white shadow-lg rounded-2xl overflow-hidden flex flex-col"
                     :class="previewStartX !== null ? 'cursor-grabbing' : 'cursor-grab'">
                     
-                    <!-- Card Header -->
-                    <div class="bg-gradient-to-r from-indigo-500 to-purple-500 px-6 py-4">
-                        <span class="text-white text-sm font-medium opacity-75">
-                            Card #<span x-text="previewCardIndex + 1"></span>
+                    <!-- Card Header - Minimal -->
+                    <div class="px-4 py-2 bg-gray-50 border-b border-gray-100 flex justify-end">
+                        <span class="text-gray-500 text-xs font-medium">
+                            <span x-text="previewCardIndex + 1"></span> / <span x-text="svaip.cards.length"></span>
                         </span>
                     </div>
                     
                     <!-- Card Content -->
-                    <div class="p-6">
-                        <h2 class="text-xl font-semibold text-gray-800 mb-3" x-text="svaip.cards[previewCardIndex].question"></h2>
-                        <p class="text-gray-500 text-sm" 
+                    <div class="p-6 sm:p-8 flex-1 flex flex-col justify-center">
+                        <h2 class="text-lg sm:text-xl font-semibold text-gray-900 mb-3 text-center" x-text="svaip.cards[previewCardIndex].question"></h2>
+                        <p class="text-gray-600 text-sm sm:text-base text-center" 
                             x-show="svaip.cards[previewCardIndex].description" 
                             x-text="svaip.cards[previewCardIndex].description"></p>
                     </div>
 
-                    <!-- Card Footer - swipe hints -->
-                    <div class="px-6 py-4 bg-gray-50 flex justify-between text-base font-medium">
-                        <span class="transition-colors duration-150"
-                            :class="previewLeaning === 0 ? 'text-purple-600' : 'text-gray-400'">
-                            <i class="fa-solid fa-arrow-left mr-1"></i><span x-text="svaip.cards[previewCardIndex].options[0]"></span>
+                    <!-- Card Footer - Swipe Options -->
+                    <div class="px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-t border-gray-100 flex justify-between items-center text-sm sm:text-base font-medium">
+                        <span class="transition-all duration-200 flex items-center gap-1"
+                            :class="previewLeaning === 0 ? 'text-indigo-600 scale-110' : 'text-gray-400'">
+                            <i class="fa-solid fa-arrow-left"></i>
+                            <span x-text="svaip.cards[previewCardIndex].options[0]"></span>
                         </span>
-                        <span class="transition-colors duration-150"
-                            :class="previewLeaning === 1 ? 'text-purple-600' : 'text-gray-400'">
-                            <span x-text="svaip.cards[previewCardIndex].options[1]"></span><i class="fa-solid fa-arrow-right ml-1"></i>
+                        <span class="text-gray-300">|</span>
+                        <span class="transition-all duration-200 flex items-center gap-1"
+                            :class="previewLeaning === 1 ? 'text-indigo-600 scale-110' : 'text-gray-400'">
+                            <span x-text="svaip.cards[previewCardIndex].options[1]"></span>
+                            <i class="fa-solid fa-arrow-right"></i>
                         </span>
                     </div>
                 </div>

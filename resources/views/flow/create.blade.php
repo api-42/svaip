@@ -4,6 +4,8 @@
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('data', () => ({
+                flowId: null, // Will be set after first save
+                successMessage: '',
                 svaip: {
                     name: '',
                     cards: [],
@@ -16,6 +18,9 @@
                 connecting: false,
                 connectFrom: null,
                 connectSide: null,
+                showGrid: true,
+                gridSize: 50,
+                saving: false,
                 
                 // Preview mode
                 showPreview: false,
@@ -46,8 +51,9 @@
                 resizeCanvas() {
                     if (!this.canvas) return;
                     const container = this.canvas.parentElement;
-                    this.canvas.width = Math.max(container.scrollWidth, 1200);
-                    this.canvas.height = Math.max(container.scrollHeight, 600);
+                    this.canvas.width = Math.max(container.scrollWidth, 3000);
+                    this.canvas.height = Math.max(container.scrollHeight, 2000);
+                    this.drawGrid();
                     this.drawConnections();
                 },
 
@@ -57,7 +63,7 @@
                         question: '',
                         description: '',
                         options: ['Yes', 'No'],
-                        branches: {0: null, 1: null},
+                        branches: [null, null],
                         x: 100 + (this.svaip.cards.length * 50),
                         y: 100 + (this.svaip.cards.length * 30),
                     };
@@ -115,6 +121,58 @@
                     this.$nextTick(() => this.drawConnections());
                 },
 
+                // Detect if adding a connection would create a cycle
+                wouldCreateCycle(fromIndex, toIndex) {
+                    // Build a temporary graph with the proposed connection
+                    const graph = {};
+                    this.svaip.cards.forEach((card, idx) => {
+                        graph[idx] = [];
+                        if (card.type !== 'end' && card.branches) {
+                            card.branches.forEach(target => {
+                                if (target !== null) {
+                                    // Convert 1-based to 0-based
+                                    graph[idx].push(target - 1);
+                                }
+                            });
+                        }
+                    });
+                    
+                    // Add proposed connection
+                    if (!graph[fromIndex]) graph[fromIndex] = [];
+                    graph[fromIndex].push(toIndex);
+                    
+                    // DFS to detect cycle
+                    const visited = new Set();
+                    const recStack = new Set();
+                    
+                    const hasCycle = (node) => {
+                        visited.add(node);
+                        recStack.add(node);
+                        
+                        if (graph[node]) {
+                            for (const neighbor of graph[node]) {
+                                if (!visited.has(neighbor)) {
+                                    if (hasCycle(neighbor)) return true;
+                                } else if (recStack.has(neighbor)) {
+                                    return true; // Cycle detected
+                                }
+                            }
+                        }
+                        
+                        recStack.delete(node);
+                        return false;
+                    };
+                    
+                    // Check from all nodes
+                    for (let i = 0; i < this.svaip.cards.length; i++) {
+                        if (!visited.has(i)) {
+                            if (hasCycle(i)) return true;
+                        }
+                    }
+                    
+                    return false;
+                },
+
                 startConnection(index, side) {
                     // Cancel if clicking the same button that started the connection
                     if (this.connecting && this.connectFrom === index && this.connectSide === side) {
@@ -130,6 +188,15 @@
 
                 finishConnection(index) {
                     if (this.connecting && this.connectFrom !== null && this.connectFrom !== index) {
+                        // Check if this connection would create a cycle
+                        if (this.wouldCreateCycle(this.connectFrom, index)) {
+                            alert('⚠️ Cannot create this connection: It would create a loop in the flow. Each path must lead to an end card without cycling back.');
+                            this.connecting = false;
+                            this.connectFrom = null;
+                            this.connectSide = null;
+                            return;
+                        }
+                        
                         this.svaip.cards[this.connectFrom].branches[this.connectSide] = index + 1;
                         this.$nextTick(() => this.drawConnections());
                     }
@@ -147,6 +214,7 @@
                     if (!this.ctx || !this.canvas) return;
 
                     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                    this.drawGrid();
 
                     this.svaip.cards.forEach((card, fromIndex) => {
                         // Skip End Cards - they don't have branches
@@ -164,6 +232,24 @@
                     });
                 },
 
+                drawGrid() {
+                    if (!this.showGrid || !this.ctx) return;
+                    
+                    this.ctx.save();
+                    this.ctx.fillStyle = '#d1d5db';
+                    
+                    // Draw dots at grid intersections
+                    for (let x = 0; x < this.canvas.width; x += this.gridSize) {
+                        for (let y = 0; y < this.canvas.height; y += this.gridSize) {
+                            this.ctx.beginPath();
+                            this.ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+                            this.ctx.fill();
+                        }
+                    }
+                    
+                    this.ctx.restore();
+                },
+
                 drawArrow(fromIndex, toIndex, side) {
                     const fromCard = this.svaip.cards[fromIndex];
                     const toCard = this.svaip.cards[toIndex];
@@ -174,8 +260,8 @@
                     const endY = toCard.y;
 
                     this.ctx.strokeStyle = side === 0 ? '#6366f1' : '#f59e0b';
-                    this.ctx.lineWidth = 3;
-                    this.ctx.setLineDash([5, 5]);
+                    this.ctx.lineWidth = 4;
+                    this.ctx.setLineDash([]);
                     
                     this.ctx.beginPath();
                     this.ctx.moveTo(startX, startY);
@@ -190,6 +276,76 @@
                         endX, endY
                     );
                     this.ctx.stroke();
+                },
+
+                snapToGrid(value) {
+                    return Math.round(value / this.gridSize) * this.gridSize;
+                },
+
+                // Save svaip via API
+                async saveSvaip() {
+                    if (this.saving) return;
+                    this.saving = true;
+                    
+                    try {
+                        // Build layout object
+                        const layout = {};
+                        let endCardCount = 0;
+                        
+                        this.svaip.cards.forEach((card, index) => {
+                            if (card.type === 'end') {
+                                layout[`end_${endCardCount}`] = { x: parseInt(card.x) || 0, y: parseInt(card.y) || 0 };
+                                endCardCount++;
+                            } else {
+                                layout[index] = { x: parseInt(card.x) || 0, y: parseInt(card.y) || 0 };
+                            }
+                        });
+                        
+                        // Format data for API
+                        const flowData = window.apiService.formatFlowData(
+                            this.svaip.name,
+                            this.svaip.description,
+                            this.svaip.cards,
+                            layout
+                        );
+                        
+                        // Call API
+                        const response = await window.apiService.createFlow(flowData);
+                        
+                        if (response.success) {
+                            // Show success message inline
+                            this.successMessage = 'Flow saved successfully! You can continue editing.';
+                            
+                            // Store flow ID for future saves
+                            this.flowId = response.data.id;
+                            
+                            // Update URL without redirect
+                            if (window.history && window.history.pushState) {
+                                window.history.pushState({}, '', `/flow/${response.data.id}/edit`);
+                            }
+                            
+                            // Clear message after 5 seconds
+                            setTimeout(() => { this.successMessage = ''; }, 5000);
+                        }
+                    } catch (error) {
+                        console.error('Save error:', error);
+                        
+                        if (error instanceof window.ApiError && error.errors) {
+                            // Show validation errors
+                            let errorMessage = 'Please fix the following errors:\n\n';
+                            Object.values(error.errors).forEach(errorArray => {
+                                errorArray.forEach(err => {
+                                    errorMessage += '• ' + err + '\n';
+                                });
+                            });
+                            alert(errorMessage);
+                        } else {
+                            this.successMessage = '';
+                            alert('An error occurred: ' + error.message);
+                        }
+                    } finally {
+                        this.saving = false;
+                    }
                 },
 
                 // Preview methods
@@ -295,8 +451,22 @@
 
 @section('content')
     <div class="px-4 sm:px-6 lg:px-8">
-        <form x-data="data()" action="{{ route('flow.store') }}" method="POST">
-            @csrf
+        <div x-data="data()">
+            
+            <!-- Validation Errors -->
+            @if ($errors->any())
+                <div class="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div class="flex items-center mb-2">
+                        <i class="fa-solid fa-circle-exclamation text-red-600 mr-2"></i>
+                        <h3 class="text-sm font-semibold text-red-800">Please fix the following errors:</h3>
+                    </div>
+                    <ul class="list-disc list-inside text-sm text-red-700">
+                        @foreach ($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
             
             <!-- Collapsible Tips -->
             <div class="mb-4">
@@ -331,22 +501,10 @@
 
             <!-- Flow Designer -->
             <div class="bg-white rounded-lg shadow-lg p-4">
-                <div class="mb-4 flex justify-between items-center">
-                    <h3 class="text-lg font-semibold text-gray-900">Flow Designer</h3>
-                    <div class="flex gap-2">
-                        <button type="button" @click="addCard()"
-                            class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">
-                            <i class="fa-solid fa-plus mr-2"></i>Add Card
-                        </button>
-                        <button type="button" @click="addEndCard()"
-                            class="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 text-sm">
-                            <i class="fa-solid fa-flag-checkered mr-2"></i>Add End Card
-                        </button>
-                    </div>
-                </div>
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Flow Designer</h3>
 
                 <!-- Card Editor Panel (above canvas) -->
-                <div x-show="selectedCard !== null" class="mb-4 bg-gray-50 rounded-lg p-4 border border-gray-200 overflow-y-auto" style="height: 300px;">
+                <div x-show="selectedCard !== null" class="mb-4 bg-gray-50 rounded-lg p-4 border border-gray-200 overflow-y-auto" style="max-height: 200px;">
                     <template x-if="selectedCard !== null && svaip.cards[selectedCard]">
                         <div>
                             <div class="flex justify-between items-center mb-3">
@@ -453,10 +611,22 @@
                     </template>
                 </div>
                 
+                <!-- Toolbar above canvas -->
+                <div class="mb-2 flex gap-2">
+                    <button type="button" @click="addCard()"
+                        class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm">
+                        <i class="fa-solid fa-plus mr-2"></i>Add Card
+                    </button>
+                    <button type="button" @click="addEndCard()"
+                        class="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 text-sm">
+                        <i class="fa-solid fa-flag-checkered mr-2"></i>Add End Card
+                    </button>
+                </div>
+                
                 <div class="relative bg-gray-50 rounded-lg border-2 border-gray-200" style="height: 800px; overflow: auto;" x-ref="scrollContainer">
-                    <canvas x-ref="canvas" class="absolute top-0 left-0 pointer-events-none" style="z-index: 1;" width="1200" height="800"></canvas>
+                    <canvas x-ref="canvas" class="absolute top-0 left-0 pointer-events-none" style="z-index: 1;" width="3000" height="2000"></canvas>
                     
-                    <div style="position: relative; z-index: 2; min-height: 800px; min-width: 1200px;">
+                    <div style="position: relative; z-index: 2; min-height: 2000px; min-width: 3000px;">
                         <template x-for="(card, index) in svaip.cards" :key="index">
                             <div class="absolute bg-white rounded-[0.6rem] shadow-md border-2 cursor-move overflow-hidden"
                                 :style="`left: ${card.x}px; top: ${card.y}px; width: 200px;`"
@@ -475,8 +645,17 @@
                                     document.addEventListener('mousemove', (e) => {
                                         if (isDragging) {
                                             const rect = $refs.scrollContainer.getBoundingClientRect();
-                                            card.x = e.clientX - rect.left + $refs.scrollContainer.scrollLeft - offsetX;
-                                            card.y = e.clientY - rect.top + $refs.scrollContainer.scrollTop - offsetY;
+                                            let newX = e.clientX - rect.left + $refs.scrollContainer.scrollLeft - offsetX;
+                                            let newY = e.clientY - rect.top + $refs.scrollContainer.scrollTop - offsetY;
+                                            
+                                            // Clamp to canvas boundaries (accounting for card width/height)
+                                            const cardWidth = 200;
+                                            const cardHeight = 150;
+                                            newX = Math.max(0, Math.min(newX, canvas.width - cardWidth));
+                                            newY = Math.max(0, Math.min(newY, canvas.height - cardHeight));
+                                            
+                                            card.x = snapToGrid(newX);
+                                            card.y = snapToGrid(newY);
                                             drawConnections();
                                         }
                                     });
@@ -558,11 +737,21 @@
                     class="flex-1 flex justify-center py-2 px-4 border-2 border-indigo-600 text-sm font-medium rounded-md text-indigo-600 bg-white hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                     <i class="fa-solid fa-play mr-2"></i>Preview Flow
                 </button>
-                <button type="submit"
-                    class="flex-1 flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                    <i class="fa-solid fa-save mr-2"></i>Save Svaip
+                <button type="button" @click="saveSvaip()" :disabled="saving"
+                    class="flex-1 flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-save mr-2" :class="{ 'fa-spin fa-spinner': saving }"></i>
+                    <span x-text="saving ? 'Saving...' : 'Save Svaip'"></span>
                 </button>
             </div>
+            
+            <!-- Success Message -->
+            <div x-show="successMessage" 
+                 x-transition
+                 class="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-800">
+                <i class="fa-solid fa-circle-check"></i>
+                <span x-text="successMessage" class="text-sm font-medium"></span>
+            </div>
+            
             <div class="mt-2">
                 <button type="button" x-on:click="cancel()"
                     class="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-gray-600 bg-gray-100 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
@@ -571,6 +760,6 @@
             </div>
 
             @include('flow.preview')
-        </form>
+        </div>
     </div>
 @endsection

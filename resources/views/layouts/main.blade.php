@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="{{ asset('js/api-service.js') }}"></script>
     <title>{{ config('app.name', 'Laravel') }}</title>
-    <link rel="stylesheet" href="{{ asset('css/app.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap" rel="stylesheet">
@@ -36,14 +37,32 @@
                     @endInApp
 
                     @auth
-                        <div>
+                        <div x-data="{
+                            async handleLogout() {
+                                try {
+                                    const response = await fetch('/api/auth/logout', {
+                                        method: 'POST',
+                                        headers: {
+                                            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                                            'Accept': 'application/json',
+                                        }
+                                    });
+                                    
+                                    const data = await response.json();
+                                    
+                                    if (data.success) {
+                                        window.location.href = '/login';
+                                    }
+                                } catch (error) {
+                                    console.error('Logout failed:', error);
+                                    window.location.href = '/login';
+                                }
+                            }
+                        }">
                             <span class="text-gray-700 mr-4">{{ auth()->user()->name }}</span>
-                            <form method="POST" action="{{ route('logout') }}" class="inline">
-                                @csrf
-                                <button type="submit" class="text-gray-500 hover:text-gray-800">
-                                    Logout
-                                </button>
-                            </form>
+                            <button @click="handleLogout" class="text-gray-500 hover:text-gray-800">
+                                Logout
+                            </button>
                         </div>
                     @endauth
                 </div>
@@ -66,6 +85,7 @@
             </footer>
         @endunless
     </div>
+    
     @stack('scripts')
 </body>
 </html>

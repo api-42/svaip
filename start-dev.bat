@@ -14,7 +14,7 @@ if not exist .env (
 REM Check if vendor directory exists
 if not exist vendor (
     echo [INFO] Installing Composer dependencies...
-    call composer install
+    call php C:\php\composer.phar install
     echo.
 )
 
@@ -70,4 +70,4 @@ REM Open browser after a delay (in background)
 start /B powershell -Command "Start-Sleep -Seconds 3; Start-Process 'http://localhost:8001'"
 
 REM Start all development services (Windows compatible - no pail)
-composer dev:windows
+php C:\php\composer.phar dev:windows

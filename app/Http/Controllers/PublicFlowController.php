@@ -90,7 +90,11 @@ class PublicFlowController extends Controller
             return $this->complete($run, $slug, $runId);
         }
 
-        return view('public.flow-run', compact('flow', 'run', 'card'));
+        // Calculate card position (answered + 1)
+        $cardPosition = $run->results()->count() + 1;
+        $totalCards = count($flow->cards);
+
+        return view('public.flow-run', compact('flow', 'run', 'card', 'cardPosition', 'totalCards'));
     }
 
     /**
@@ -129,6 +133,7 @@ class PublicFlowController extends Controller
             ],
             [
                 'answer' => $request->answer,
+                'answered_at' => now(),
             ]
         );
 
@@ -177,7 +182,16 @@ class PublicFlowController extends Controller
     private function getNextCard(FlowRun $run)
     {
         $answeredCardIds = $run->results()->pluck('card_id')->toArray();
-        $cards = Card::whereIn('id', $run->flow->cards)->get();
+        
+        // Get cards in the correct order using the flow's cards array
+        if (empty($run->flow->cards)) {
+            return null;
+        }
+        
+        $cardsById = Card::whereIn('id', $run->flow->cards)->get()->keyBy('id');
+        $cards = collect($run->flow->cards)->map(function($cardId) use ($cardsById) {
+            return $cardsById->get($cardId);
+        })->filter();
 
         // Get the last answered card to check for branching
         $lastResult = $run->results()->latest('updated_at')->first();
@@ -187,14 +201,34 @@ class PublicFlowController extends Controller
             $nextCardId = $lastCard?->getNextCardId($lastResult->answer);
 
             if ($nextCardId) {
-                $nextCard = Card::find($nextCardId);
-                if ($nextCard && !in_array($nextCard->id, $answeredCardIds)) {
-                    return $nextCard;
+                // SECURITY FIX: Validate branch target belongs to this flow
+                if (!in_array($nextCardId, $run->flow->cards)) {
+                    // Log security incident - potential attack attempt
+                    \Log::warning('Invalid branch target detected', [
+                        'flow_id' => $run->flow_id,
+                        'flow_slug' => $run->flow->public_slug,
+                        'run_id' => $run->id,
+                        'invalid_card_id' => $nextCardId,
+                        'source_card_id' => $lastResult->card_id,
+                        'valid_flow_cards' => $run->flow->cards,
+                        'user_ip' => request()->ip(),
+                        'user_agent' => request()->userAgent(),
+                    ]);
+                    
+                    // Ignore invalid branch, continue with sequential flow
+                    // This prevents unauthorized access to cards from other flows
+                    $nextCardId = null;
+                } else {
+                    // Branch target is valid - proceed
+                    $nextCard = Card::find($nextCardId);
+                    if ($nextCard && !in_array($nextCard->id, $answeredCardIds)) {
+                        return $nextCard;
+                    }
                 }
             }
         }
 
-        // Return first unanswered card
+        // Return first unanswered card (in correct order)
         foreach ($cards as $card) {
             if (!in_array($card->id, $answeredCardIds)) {
                 return $card;
@@ -207,8 +241,22 @@ class PublicFlowController extends Controller
     /**
      * Complete the run
      */
+    /**
+     * Mark the run as complete
+     */
     private function complete(FlowRun $run, $slug, $runId)
     {
+        // Store form field responses if provided in request
+        if (request()->has('form_data') && is_array(request('form_data'))) {
+            foreach (request('form_data') as $fieldName => $fieldValue) {
+                \App\Models\FlowRunFormResponse::create([
+                    'flow_run_id' => $run->id,
+                    'field_name' => $fieldName,
+                    'field_value' => $fieldValue,
+                ]);
+            }
+        }
+        
         $run->stopped();
         $run->calculateScore();
         $run->assignResultTemplate();

@@ -26,6 +26,8 @@
             currentCard: @json($card),
             flowSlug: '{{ $flow->public_slug }}',
             runId: '{{ $run->id }}',
+            cardPosition: {{ $cardPosition }},
+            totalCards: {{ $totalCards }},
 
             startDrag(e) {
                 this.startX = e.clientX;
@@ -88,22 +90,42 @@
     });
 </script>
 <body x-data="flowState()" class="bg-gray-100 p-4 touch-none bg-gradient-to-b from-slate-100 via-gray-100 to-slate-100 bg-no-repeat bg-fixed">
-    <div class="flex justify-center items-center h-[60vh]">
-        <div class="absolute inset-0 flex justify-center items-center gap-10 text-gray-300 font-semibold text-4xl sm:text-5xl px-10 sm:px-16 pointer-events-none select-none">
-            <span class="mr-5" x-bind:class="{'text-gray-400': leaning !== 0, 'text-emerald-600': leaning === 0}" x-text="currentCard.options[0]"></span>
-            <span class="border-l border-gray-300 h-[60%]"></span>
-            <span class="ml-5" x-bind:class="{'text-gray-400': leaning !== 1, 'text-emerald-600': leaning === 1}" x-text="currentCard.options[1]"></span>
-        </div>
+    <div class="flex justify-center items-center min-h-screen py-8">
+        <!-- Swipeable Card with Unified Design -->
         <div @pointerdown="startDrag($event)"
             @pointermove="drag($event)"
             @pointerup="endDrag($event)"
             @pointercancel="endDrag($event)" 
             x-bind:style="`transform: rotate(${rotation}deg) translateX(${offsetX}px); transition: transform 0.15s ease-out;`"
-            class="select-none max-w-md w-full bg-white shadow-md rounded-2xl p-6 flex flex-col justify-between"
+            class="select-none max-w-sm sm:max-w-lg w-full bg-white shadow-lg rounded-2xl overflow-hidden flex flex-col"
             x-bind:class="startX !== null ? 'cursor-grabbing' : 'cursor-grab'">
-            <div>
-                <h2 class="text-base text-center sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4" x-text="currentCard.question"></h2>
-                <p class="text-gray-500 text-sm sm:text-base mb-4 text-center" x-text="currentCard.description"></p>
+            
+            <!-- Card Header - Minimal -->
+            <div class="px-4 py-2 bg-gray-50 border-b border-gray-100 flex justify-end">
+                <span class="text-gray-500 text-xs font-medium">
+                    <span x-text="cardPosition"></span> / <span x-text="totalCards"></span>
+                </span>
+            </div>
+            
+            <!-- Card Content -->
+            <div class="p-6 sm:p-8 flex-1 flex flex-col justify-center">
+                <h2 class="text-lg sm:text-xl font-semibold text-gray-900 mb-3 text-center" x-text="currentCard.question"></h2>
+                <p class="text-gray-600 text-sm sm:text-base text-center" x-text="currentCard.description"></p>
+            </div>
+
+            <!-- Card Footer - Swipe Options -->
+            <div class="px-4 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-t border-gray-100 flex justify-between items-center text-sm sm:text-base font-medium">
+                <span class="transition-all duration-200 flex items-center gap-1"
+                    x-bind:class="leaning === 0 ? 'text-indigo-600 scale-110' : 'text-gray-400'">
+                    <i class="fa-solid fa-arrow-left"></i>
+                    <span x-text="currentCard.options[0]"></span>
+                </span>
+                <span class="text-gray-300">|</span>
+                <span class="transition-all duration-200 flex items-center gap-1"
+                    x-bind:class="leaning === 1 ? 'text-indigo-600 scale-110' : 'text-gray-400'">
+                    <span x-text="currentCard.options[1]"></span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </span>
             </div>
         </div>
     </div>

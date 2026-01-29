@@ -1,0 +1,330 @@
+<?php
+
+namespace App\Http\Controllers\Api\V1;
+
+use App\Http\Controllers\Api\ApiController;
+use App\Http\Requests\Api\FlowStoreRequest;
+use App\Http\Requests\Api\FlowUpdateRequest;
+use App\Http\Resources\FlowResource;
+use App\Models\Flow;
+use App\Models\Card;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class FlowController extends ApiController
+{
+    /**
+     * Display a listing of the user's flows.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $query = Flow::where('user_id', auth()->id());
+
+        // Pagination
+        $perPage = min($request->query('per_page', 15), 100);
+        $flows = $query->latest()->paginate($perPage);
+
+        return $this->success([
+            'flows' => FlowResource::collection($flows),
+            'pagination' => [
+                'total' => $flows->total(),
+                'per_page' => $flows->perPage(),
+                'current_page' => $flows->currentPage(),
+                'last_page' => $flows->lastPage(),
+            ],
+        ]);
+    }
+
+    /**
+     * Store a newly created flow.
+     */
+    public function store(FlowStoreRequest $request): JsonResponse
+    {
+        try {
+            DB::beginTransaction();
+
+            // Create cards (question cards only)
+            $cards = [];
+            $cardIdMapping = [];
+            $layout = [];
+
+            foreach ($request->input('cards', []) as $index => $cardData) {
+                $card = Card::create([
+                    'question' => $cardData['question'],
+                    'description' => $cardData['description'] ?? null,
+                    'skipable' => $cardData['skipable'] ?? false,
+                    'options' => $cardData['options'],
+                    'branches' => null,
+                    'scoring' => $cardData['scoring'] ?? null,
+                ]);
+
+                $cards[] = $card;
+                $cardIdMapping[$index] = $card->id;
+
+                // Store position
+                if (isset($cardData['position'])) {
+                    $layout[$index] = [
+                        'x' => (int)($cardData['position']['x'] ?? 0),
+                        'y' => (int)($cardData['position']['y'] ?? 0),
+                    ];
+                }
+            }
+
+            // Second pass: update branches
+            foreach ($request->input('cards', []) as $index => $cardData) {
+                if (isset($cardData['branches']) && is_array($cardData['branches'])) {
+                    $branches = [];
+                    foreach ($cardData['branches'] as $answer => $targetIndex) {
+                        if ($targetIndex !== null && isset($cardIdMapping[$targetIndex])) {
+                            $branches[$answer] = $cardIdMapping[$targetIndex];
+                        } else {
+                            $branches[$answer] = null;
+                        }
+                    }
+                    $cards[$index]->branches = $branches;
+                    $cards[$index]->save();
+                }
+            }
+
+            // Create flow with end cards in metadata
+            $metadata = [];
+            if ($request->has('end_cards')) {
+                $metadata['end_cards'] = $request->input('end_cards');
+                
+                // Store end card positions in layout
+                foreach ($request->input('end_cards', []) as $index => $endCard) {
+                    if (isset($endCard['position'])) {
+                        $endCardIndex = 'end_' . $index;
+                        $layout[$endCardIndex] = [
+                            'x' => (int)($endCard['position']['x'] ?? 0),
+                            'y' => (int)($endCard['position']['y'] ?? 0),
+                        ];
+                    }
+                }
+            }
+
+            $flow = auth()->user()->flows()->create([
+                'name' => $request->input('name'),
+                'description' => $request->input('description'),
+                'cards' => collect($cards)->pluck('id'),
+                'layout' => !empty($layout) ? $layout : null,
+                'metadata' => !empty($metadata) ? $metadata : null,
+            ]);
+
+            DB::commit();
+
+            // Flow is already loaded, no need to eager load relationships
+
+            return $this->success(
+                new FlowResource($flow),
+                'Flow saved successfully',
+                201
+            );
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Flow creation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return $this->error('Failed to create flow: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Display the specified flow.
+     */
+    public function show(string $id): JsonResponse
+    {
+        $flow = Flow::where('user_id', auth()->id())
+            ->with('cardsRelation')
+            ->find($id);
+
+        if (!$flow) {
+            return $this->notFound('Flow not found');
+        }
+
+        return $this->success(new FlowResource($flow));
+    }
+
+    /**
+     * Update the specified flow.
+     */
+    public function update(FlowUpdateRequest $request, string $id): JsonResponse
+    {
+        try {
+            $flow = Flow::where('user_id', auth()->id())->find($id);
+
+            if (!$flow) {
+                return $this->notFound('Flow not found');
+            }
+
+            DB::beginTransaction();
+
+            // Update flow attributes
+            if ($request->has('name')) {
+                $flow->name = $request->input('name');
+            }
+            if ($request->has('description')) {
+                $flow->description = $request->input('description');
+            }
+
+            // Update cards if provided
+            if ($request->has('cards')) {
+                $cards = [];
+                $cardIdMapping = [];
+                $layout = [];
+
+                foreach ($request->input('cards') as $index => $cardData) {
+                    $cardAttributes = [
+                        'question' => $cardData['question'],
+                        'description' => $cardData['description'] ?? null,
+                        'skipable' => $cardData['skipable'] ?? false,
+                        'options' => $cardData['options'],
+                        'branches' => null,
+                        'scoring' => $cardData['scoring'] ?? null,
+                    ];
+
+                    if (isset($cardData['id']) && $cardData['id']) {
+                        $card = Card::find($cardData['id']);
+                        if ($card) {
+                            $card->update($cardAttributes);
+                        } else {
+                            $card = Card::create($cardAttributes);
+                        }
+                    } else {
+                        $card = Card::create($cardAttributes);
+                    }
+
+                    $cards[] = $card;
+                    $cardIdMapping[$index] = $card->id;
+
+                    if (isset($cardData['position'])) {
+                        $layout[$index] = [
+                            'x' => (int)($cardData['position']['x'] ?? 0),
+                            'y' => (int)($cardData['position']['y'] ?? 0),
+                        ];
+                    }
+                }
+
+                // Update branches
+                foreach ($request->input('cards') as $index => $cardData) {
+                    if (isset($cardData['branches']) && is_array($cardData['branches'])) {
+                        $branches = [];
+                        foreach ($cardData['branches'] as $answer => $targetIndex) {
+                            if ($targetIndex !== null && isset($cardIdMapping[$targetIndex])) {
+                                $branches[$answer] = $cardIdMapping[$targetIndex];
+                            } else {
+                                $branches[$answer] = null;
+                            }
+                        }
+                        $cards[$index]->branches = $branches;
+                        $cards[$index]->save();
+                    }
+                }
+
+                $flow->cards = collect($cards)->pluck('id');
+                $flow->layout = !empty($layout) ? $layout : null;
+            }
+
+            // Update end cards in metadata
+            if ($request->has('end_cards')) {
+                $metadata = $flow->metadata ?? [];
+                $metadata['end_cards'] = $request->input('end_cards');
+                $flow->metadata = $metadata;
+
+                // Update end card positions in layout
+                $layout = $flow->layout ?? [];
+                foreach ($request->input('end_cards', []) as $index => $endCard) {
+                    if (isset($endCard['position'])) {
+                        $endCardIndex = 'end_' . $index;
+                        $layout[$endCardIndex] = [
+                            'x' => (int)($endCard['position']['x'] ?? 0),
+                            'y' => (int)($endCard['position']['y'] ?? 0),
+                        ];
+                    }
+                }
+                $flow->layout = $layout;
+            }
+
+            $flow->save();
+
+            DB::commit();
+
+            // Flow is already loaded, no need to eager load relationships
+
+            return $this->success(
+                new FlowResource($flow),
+                'Flow updated successfully'
+            );
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Flow update failed', [
+                'flow_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return $this->error('Failed to update flow: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Remove the specified flow.
+     */
+    public function destroy(string $id): JsonResponse
+    {
+        $flow = Flow::where('user_id', auth()->id())->find($id);
+
+        if (!$flow) {
+            return $this->notFound('Flow not found');
+        }
+
+        try {
+            $flow->delete();
+            return $this->success(null, 'Flow deleted successfully');
+        } catch (\Exception $e) {
+            \Log::error('Flow deletion failed', [
+                'flow_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            return $this->error('Failed to delete flow', 500);
+        }
+    }
+
+    /**
+     * Toggle flow public status.
+     */
+    public function togglePublic(string $id): JsonResponse
+    {
+        $flow = Flow::where('user_id', auth()->id())->find($id);
+
+        if (!$flow) {
+            return $this->notFound('Flow not found');
+        }
+
+        try {
+            $flow->is_public = !$flow->is_public;
+
+            if ($flow->is_public && !$flow->public_slug) {
+                $flow->public_slug = \Str::random(10);
+            }
+
+            $flow->save();
+
+            return $this->success([
+                'is_public' => $flow->is_public,
+                'public_slug' => $flow->public_slug,
+                'public_url' => $flow->is_public ? $flow->publicUrl() : null,
+            ], 'Flow visibility updated');
+
+        } catch (\Exception $e) {
+            \Log::error('Toggle public failed', [
+                'flow_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            return $this->error('Failed to update flow visibility', 500);
+        }
+    }
+}

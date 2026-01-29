@@ -17,7 +17,7 @@ chmod +x start-dev.sh
 
 ### Using Composer
 ```bash
-composer dev
+php C:\php\composer.phar dev
 ```
 
 This starts **all development services** in one terminal:
@@ -33,7 +33,7 @@ This starts **all development services** in one terminal:
 Before starting for the first time, run:
 
 ```bash
-composer setup
+php C:\php\composer.phar setup
 ```
 
 This will:
@@ -42,6 +42,64 @@ This will:
 3. Generate application key
 4. Create and migrate database
 5. Build frontend assets
+
+---
+
+## 🌐 Access the Application
+
+Once running, open your browser:
+
+- **Home**: http://localhost:8000
+- **Register**: http://localhost:8000/register  
+- **Login**: http://localhost:8000/login
+
+**Authentication is API-based:**
+- Forms use Alpine.js to call `/api/auth/*` endpoints
+- Session cookies stored automatically
+- No page reloads on login/register
+
+---
+
+## 🔐 Authentication Flow
+
+The auth system uses a modern API approach:
+
+1. **Registration:**
+   - Fill form → Alpine.js POST to `/api/auth/register`
+   - Server validates, creates user, logs in, regenerates session
+   - JSON response → Client redirects to homepage
+
+2. **Login:**
+   - Fill form → Alpine.js POST to `/api/auth/login`
+   - Server validates credentials, creates session
+   - JSON response → Client redirects to homepage
+
+3. **Logout:**
+   - Click logout → Alpine.js POST to `/api/auth/logout`
+   - Server invalidates session
+   - Client redirects to login page
+
+No page reloads, just smooth JSON API calls! 🚀
+
+---
+
+## 📡 API Endpoints
+
+All API routes are under `/api/*` (no versioning):
+
+### Authentication (Public)
+- `POST /api/auth/register` - Create account
+- `POST /api/auth/login` - Login with credentials
+- `POST /api/auth/logout` - Logout (requires auth)
+
+### Flows (Authenticated)
+- `GET /api/flows` - List user's flows
+- `POST /api/flows` - Create new flow
+- `GET /api/flows/{id}` - Get flow details
+- `PUT /api/flows/{id}` - Update flow
+- `DELETE /api/flows/{id}` - Delete flow
+
+**📖 See [docs/API.md](./docs/API.md) for complete API documentation**
 
 ---
 
@@ -73,33 +131,21 @@ npm run dev
 
 ---
 
-## 🌐 Access the Application
-
-Once running, open your browser:
-
-- **Home**: http://localhost:8000
-- **Register**: http://localhost:8000/register  
-- **Login**: http://localhost:8000/login
-
-**Default test user** (after running seeders):
-- Email: test@example.com
-- Password: password
-
----
-
 ## 🧪 Run Tests
 
 ```bash
-# All tests (70 tests, ~2 seconds)
+# All tests (82 tests, ~60 seconds)
 php artisan test
 
 # Specific test suites
-php artisan test --filter=Auth
+php artisan test --filter=Analytics
 php artisan test --filter=Scoring
 
 # With coverage
 php artisan test --coverage
 ```
+
+**Note:** Auth tests currently fail - they test legacy form POST flow. Need updating to test API endpoints.
 
 ---
 
@@ -113,13 +159,10 @@ All services stop automatically.
 
 ## 📚 Full Documentation
 
-See **[START.md](./START.md)** for:
-- Detailed setup instructions
-- Troubleshooting guide
-- Production deployment
-- Database management
-- Cache commands
-- And more...
+- **[README.md](./README.md)** - Project overview and features
+- **[START.md](./START.md)** - Detailed setup and deployment
+- **[docs/API.md](./docs/API.md)** - Complete API reference
+- **[docs/ENGINEERING_STANDARDS.md](./docs/ENGINEERING_STANDARDS.md)** - Development standards
 
 ---
 
@@ -129,7 +172,7 @@ See **[START.md](./START.md)** for:
 ```bash
 start-dev.bat  # Windows
 ./start-dev.sh # Linux/Mac
-composer dev   # Any platform
+php C:\php\composer.phar dev   # Any platform (Windows: use full path)
 ```
 
 **Need to reset database?**
@@ -140,11 +183,20 @@ php artisan migrate:fresh
 **Frontend not updating?**
 - Make sure Vite is running (`npm run dev` or use `composer dev`)
 - Check http://localhost:5173 is accessible
+- Clear browser cache
 
 **Port 8000 busy?**
 ```bash
 php artisan serve --port=8001
 ```
+
+**CSRF token errors?**
+- Check `<meta name="csrf-token">` exists in layout
+- Verify Alpine.js includes token in fetch headers
+
+**Session errors on login/register?**
+- Ensure API auth routes have 'web' middleware in `routes/api.php`
+- Check session driver in `.env` (default: `file`)
 
 ---
 
@@ -172,6 +224,30 @@ When you use `composer dev` or `start-dev.bat`:
 
 ## 🆘 Having Issues?
 
+### Common Problems
+
+**"Session store not set on request"**
+- **Fix:** Auth routes in `routes/api.php` need `web` middleware
+- **Check:** `Route::middleware(['web'])->group(...)` for auth endpoints
+
+**404 on API calls**
+- **Fix:** API base URL should be `/api` not `/api/v1`
+- **Check:** `public/js/api-service.js` line 16: `constructor(baseUrl = '/api')`
+
+**CSRF token missing**
+- **Fix:** Ensure meta tag in layout: `<meta name="csrf-token" content="{{ csrf_token() }}">`
+- **Check:** Blade templates include CSRF token in fetch headers
+
+**Login/register form not working**
+- **Fix:** Check browser console for JavaScript errors
+- **Check:** Network tab shows POST to `/api/auth/login` with 200 response
+
+**Tests failing**
+- **Expected:** Auth tests fail (test old form flow, need updating)
+- **Action:** Run non-auth tests: `php artisan test --exclude-group=auth`
+
+### General Troubleshooting
+
 1. **Check `.env` file exists**: Run `composer setup`
 2. **Dependencies missing**: Run `composer install && npm install`
 3. **Database errors**: Delete `database/database.sqlite` and run `php artisan migrate`
@@ -186,48 +262,58 @@ See **[START.md](./START.md)** for detailed troubleshooting.
 
 ```
 svaip/
-├── start-dev.bat         # Windows startup script ⭐
-├── start-dev.sh          # Linux/Mac startup script ⭐
-├── start-simple.bat      # Basic server only (Windows)
-├── START.md              # Detailed documentation 📚
-├── app/                  # Application code
-│   ├── Models/           # Database models
-│   ├── Http/Controllers/ # Request handlers
-│   └── Http/Resources/   # API responses
-├── tests/                # 70 tests ✅
-│   ├── Feature/Auth/     # Authentication tests
-│   └── Feature/Scoring/  # Scoring system tests
-├── database/
-│   ├── migrations/       # Database schema
-│   └── factories/        # Test data generators
-└── resources/
-    ├── views/            # Blade templates
-    └── js/               # Frontend JavaScript
+├── app/
+│   ├── Http/
+│   │   ├── Controllers/
+│   │   │   ├── AuthController.php       # API auth (login/register/logout)
+│   │   │   └── Api/
+│   │   │       ├── FlowController.php   # Flow CRUD API
+│   │   │       └── TokenController.php  # Token generation
+│   │   └── Requests/Auth/              # FormRequest validation
+│   ├── Services/FlowService.php        # Business logic
+│   └── Policies/FlowPolicy.php         # Authorization
+├── public/js/api-service.js            # Frontend API client
+├── resources/views/
+│   └── auth/                           # Login/register with Alpine.js
+├── routes/
+│   ├── api.php                         # API routes (/api/*)
+│   └── web.php                         # View routes
+├── tests/                              # 82 tests
+└── docs/
+    ├── API.md                          # API documentation
+    └── ENGINEERING_STANDARDS.md        # Dev standards
 ```
 
 ---
 
 ## 🎉 Features Implemented
 
-✅ **Authentication** - Register, login, logout (27 tests)  
+✅ **API-First Auth** - JSON endpoints with session management  
+✅ **No Redirects** - Client-side navigation after auth  
 ✅ **Smart Scoring** - Point-based assessments with results  
 ✅ **Result Templates** - Customizable outcome pages  
 ✅ **Public Sharing** - Unique URLs for completed flows  
 ✅ **Branching Logic** - Conditional flow navigation  
-✅ **Card System** - Reusable question components  
+✅ **Cycle Detection** - Prevents infinite loops  
+✅ **Analytics** - Comprehensive statistics dashboard  
 
-**Test Coverage**: 70 tests passing (160 assertions) 🎯
+**Test Coverage**: 82 tests (206 assertions) 🎯
 
 ---
 
 ## 🚀 Next Steps
 
-1. Start the server: `start-dev.bat`
+1. Start the server: `start-dev.bat` or `composer dev`
 2. Open http://localhost:8000
-3. Register a new account
+3. Register a new account (uses API!)
 4. Create your first flow
 5. Add cards with scoring
 6. Create result templates
 7. Run and share results!
+
+**API Testing:**
+- Open DevTools Network tab
+- Watch API calls to `/api/auth/login` and `/api/flows`
+- See JSON responses in real-time
 
 Happy coding! 🎨

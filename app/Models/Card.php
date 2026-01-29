@@ -4,12 +4,22 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Card extends Model
 {
     use HasFactory;
     
-    protected $guarded = [];
+    protected $fillable = [
+        'question',
+        'description',
+        'image_url',
+        'skipable',
+        'options',
+        'branches',
+        'scoring',
+    ];
+    
     public $casts = [
         'options' => 'array',
         'branches' => 'array',
@@ -42,5 +52,55 @@ class Card extends Model
         }
         
         return (int) $this->scoring[$answer];
+    }
+
+    /**
+     * Validate that all branch targets are valid card IDs within the flow
+     * 
+     * @param array $flowCards Array of valid card IDs in the flow
+     * @return array Validation errors (empty array if valid)
+     */
+    public function validateBranches(array $flowCards): array
+    {
+        $errors = [];
+        
+        if (!is_array($this->branches)) {
+            return $errors;
+        }
+        
+        foreach ($this->branches as $index => $branchTarget) {
+            // null is valid (means "continue sequentially")
+            if ($branchTarget === null) {
+                continue;
+            }
+            
+            // Check if branch target exists in the flow
+            if (!in_array($branchTarget, $flowCards)) {
+                $errors[] = sprintf(
+                    'Branch target at option %d (card ID %s) is not part of this flow. Valid cards: [%s]',
+                    $index,
+                    $branchTarget,
+                    implode(', ', $flowCards)
+                );
+            }
+        }
+        
+        return $errors;
+    }
+
+    /**
+     * Get all connections where this card is the source
+     */
+    public function outgoingConnections(): HasMany
+    {
+        return $this->hasMany(CardConnection::class, 'source_card_id');
+    }
+
+    /**
+     * Get all connections where this card is the target
+     */
+    public function incomingConnections(): HasMany
+    {
+        return $this->hasMany(CardConnection::class, 'target_card_id');
     }
 }
